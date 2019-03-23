@@ -13,24 +13,24 @@ const (
 	queueDepth  = 1
 )
 
-// Setup contains the configuration details and components needed.
+// Setup contains the core components for the Coordinator.
 type Setup struct {
 	WorkerCount    int
 	QueueDepth     int
 	HashRequests   HandleRequestMap
-	Running        *sync.WaitGroup
-	WorkerRunning  *sync.WaitGroup
+	Sync           *sync.WaitGroup
+	WorkerSync     *sync.WaitGroup
 	Workers        []chan *Request
 	RequestChannel chan *Request
 }
 
-// NewSetup returns a new Setup with Defaults.
+// NewSetup returns a new Setup with default values which can be modified.
 func NewSetup() *Setup {
 	return &Setup{
 		WorkerCount:    workerCount,
 		QueueDepth:     queueDepth,
-		Running:        &sync.WaitGroup{},
-		WorkerRunning:  &sync.WaitGroup{},
+		Sync:           &sync.WaitGroup{},
+		WorkerSync:     &sync.WaitGroup{},
 		Workers:        make([]chan *Request, workerCount),
 		RequestChannel: make(chan *Request, queueDepth),
 	}
@@ -41,29 +41,45 @@ type Coordinator interface {
 	Setup() *Setup
 }
 
-// Start here.
-func Start(coord Coordinator, workers []Worker) {
+// StartWork creates the specified number of Workers, assigns the given HandleRequestMap and starts the work process.
+func StartWork(coord Coordinator, requestMap HandleRequestMap) {
 	for i := 0; i < coord.Setup().WorkerCount; i++ {
 		coord.Setup().Workers[i] = make(chan *Request, coord.Setup().QueueDepth)
-		coord.Setup().WorkerRunning.Add(1)
-		go Work(workers[i])
+		setup := WorkerSetup{
+			WorkerID:       i,
+			RequestChannel: coord.Setup().Workers[i],
+			RequestMap:     requestMap,
+			Sync:           coord.Setup().WorkerSync,
+		}
+		coord.Setup().WorkerSync.Add(1)
+		go StartWorker(&setup)
 	}
-	coord.Setup().Running.Add(1)
+	coord.Setup().Sync.Add(1)
+	go coordLoop(coord.Setup())
+}
+
+// StartWorkers takes pre-configured Workers and starts the work process.
+func StartWorkers(coord Coordinator, workers []Worker) {
+	for i := 0; i < len(workers); i++ {
+		coord.Setup().WorkerSync.Add(1)
+		go StartWorker(workers[i].Setup())
+	}
+	coord.Setup().Sync.Add(1)
 	go coordLoop(coord.Setup())
 }
 
 // Stop here.
 func Stop(coord Coordinator) {
 	close(coord.Setup().RequestChannel)
-	coord.Setup().WorkerRunning.Wait()
+	coord.Setup().WorkerSync.Wait()
 	for i := 0; i < coord.Setup().WorkerCount; i++ {
 		close(coord.Setup().Workers[i])
 	}
-	coord.Setup().WorkerRunning.Wait()
+	coord.Setup().WorkerSync.Wait()
 }
 
 func coordLoop(setup *Setup) {
-	defer setup.Running.Done()
+	defer setup.Sync.Done()
 	for request := range setup.RequestChannel {
 		r := *request
 		_, consistent := setup.HashRequests[r.Type()]
@@ -71,10 +87,9 @@ func coordLoop(setup *Setup) {
 		case consistent:
 			// Hash to a consistent worker
 			setup.Workers[int(xxhash.ChecksumString64(r.String())%uint64(setup.WorkerCount))] <- request
-		case !consistent:
+		default:
 			// Send to any worker
 			setup.Workers[int(rand.Int31n(int32(setup.WorkerCount)))] <- request
-		default:
 		}
 	}
 }
