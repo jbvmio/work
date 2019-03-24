@@ -1,11 +1,7 @@
 package work
 
 import (
-	"fmt"
-	"math/rand"
 	"sync"
-
-	"github.com/OneOfOne/xxhash"
 )
 
 // Default Values
@@ -40,6 +36,7 @@ type Coordinator interface {
 	Setup() *Setup
 }
 
+/*
 // StartWork creates the specified number of Workers, assigns the given HandleRequestMap and starts the work process.
 func StartWork(coord Coordinator, requestMap HandleRequestMap) {
 	coord.Setup().Workers = make([]chan Request, coord.Setup().WorkerCount)
@@ -96,3 +93,4 @@ func coordLoop(setup *Setup) {
 		}
 	}
 }
+*/

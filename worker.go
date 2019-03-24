@@ -1,7 +1,6 @@
 package work
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -22,6 +21,7 @@ type Worker interface {
 	Setup() *WorkerSetup
 }
 
+/*
 // StartWorker takes a WorkerSetup starts the Work Process.
 func StartWorker(setup *WorkerSetup) {
 	defer setup.Sync.Done()
@@ -44,3 +44,4 @@ func StartWorker(setup *WorkerSetup) {
 	}
 	fmt.Println("Worker", setup.WorkerID, "Stopped")
 }
+*/

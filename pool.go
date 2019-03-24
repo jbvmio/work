@@ -16,6 +16,7 @@ func NewPool(setup *Setup) Pool {
 	}
 }
 
+/*
 // Setup returns the Pool Coordinator Setup.
 func (p *Pool) Setup() *Setup {
 	return p.Coord
@@ -93,3 +94,4 @@ func (r *Res) Err() error {
 func (r *Res) HasObject() bool {
 	return r.HasObj
 }
+*/
