@@ -1,30 +1,29 @@
 package work
 
 import (
+	"fmt"
 	"time"
 )
 
-/*
-// Request represents a work Request.
-type Request interface {
-	// RequestType returns the RequestTypeID the Request.
-	RequestType() RequestTypeID
-	// Response returns any Replies returned by a RequestHandler.
-	Response() chan interface{}
-}
-*/
+// Result represents any result or response from a Request.
+type Result interface{}
 
-// Response represents any reply from a Request.
-type Response interface{}
+// NewResultChannel is a convenience func returning a new Result channel.
+func NewResultChannel() chan Result {
+	return make(chan Result, 1)
+}
 
 // RequestTypeID is used to determine the type of Request to be serviced by a RequestHandler.
 type RequestTypeID int
 
+// Data represents any data or value related for a Request.
+type Data interface{}
+
 // TaskRequest represents a work Request.
 type TaskRequest interface {
 	RequestType() RequestTypeID
-	GetResponse() Response
-	ResponseChan() chan Response
+	ResultChan() chan Result
+	Get() interface{}
 }
 
 // Request implements TaskRequest.
@@ -32,16 +31,16 @@ type Request struct {
 	// RequestTypeID for the Request. Used to determine the appropriate RequestHandler.
 	RequestTypeID RequestTypeID
 
-	// Data contains anything related for the Request.
-	Data interface{}
+	// Data contains any data or value related for the Request.
+	Data Data
 
 	// An overriding RequestHandleFunc for this Request instance.
 	// If nil, the corresponding RequestTypeID RequestHandleFunc will be used.
 	Handler RequestHandleFunc
 
-	// ResponseChan is the channel made for any replies expected from a RequestHandler.
-	// If a Response is expected from the Request, the ResponseChannel should be created when making the Request.
-	Response chan Response
+	// Result channel can used for any Result or response expected from a RequestHandler if desired.
+	// If the Result channel is expected from the Request, the ResultChan should be created when making the Request.
+	Result chan Result
 }
 
 // RequestType returns the RequestTypeID of the Request.
@@ -49,31 +48,43 @@ func (r *Request) RequestType() RequestTypeID {
 	return r.RequestTypeID
 }
 
-// ResponseChan returns the underlying Response Channel of the Request.
+// ResultChan returns the underlying Result channel of the Request.
 // If a Response is expected from the Request, the ResponseChannel should be created when making the Request.
-func (r *Request) ResponseChan() chan Response {
-	return r.Response
+func (r *Request) ResultChan() chan Result {
+	return r.Result
 }
 
-// GetResponse returns the Response if the Request currently contains one and closes the Response channel.
-// Returns nil otherwise.
-func (r *Request) GetResponse() Response {
-	if r.Response == nil {
+// Get returns any Data in the Request.
+func (r *Request) Get() Data {
+	return r.Data
+}
+
+// GetResult returns the Result of the Request and closes the Result channel.
+// Returns nil if the channel is closed or if the attempt times out with the given maxTime in seconds.
+// GetResult will block if using an unbuffered Result channel until either the Result is available or timeout occurs.
+func (r *Request) GetResult(maxTime int) Result {
+	if maxTime < 1 {
+		maxTime = 1
+	}
+	timeout := time.After(time.Duration(maxTime) * time.Second)
+	if r.Result == nil {
+		fmt.Println("NIL 1")
 		return nil
 	}
 	select {
-	case i, ok := <-r.Response:
+	case i, ok := <-r.Result:
+		fmt.Println("i, ok >", i, ok)
 		switch {
 		case ok:
-			close(r.Response)
+			fmt.Println("RETURNING RESULT")
+			close(r.Result)
 			return i
-		default:
-			//Channel Closed
-			return nil
 		}
-	default:
-		return nil
+	case <-timeout:
+		fmt.Println("TIMED OUT")
+		break
 	}
+	fmt.Println("NIL 4")
 	return nil
 }
 
@@ -82,10 +93,10 @@ func (r *Request) GetResponse() Response {
 type RequestHandleFunc func(TaskRequest)
 
 // NoopHandler can be used to as default RequestHandler.
-// It does nothing with the request and closes the Reply channel as needed.
+// It does nothing with the request and closes the Result channel as needed.
 func NoopHandler(request TaskRequest) {
-	if request.ResponseChan() != nil {
-		close(request.ResponseChan())
+	if request.ResultChan() != nil {
+		close(request.ResultChan())
 	}
 }
 
