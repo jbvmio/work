@@ -14,15 +14,21 @@ import (
 type TeamConfig struct {
 	// Number of workers for the Team.
 	Workers int
+	// WorkerQueueSize is the queue size allowed for each worker.
+	WorkerQueueSize int
 	// MaxTime in seconds allowed for any Task submits or Result requests.
 	MaxTimeSecs int
+	// CloseOnTimeout closes any open Result channels open on Requests if the operation times out.
+	CloseOnTimeout bool
 }
 
 // NewTeamConfig returns a new TeamConfig with defaults.
 func NewTeamConfig() *TeamConfig {
 	return &TeamConfig{
-		Workers:     3,
-		MaxTimeSecs: 1,
+		Workers:         3,
+		WorkerQueueSize: 5,
+		MaxTimeSecs:     1,
+		CloseOnTimeout:  true,
 	}
 }
 
@@ -61,19 +67,35 @@ func NewTeam(config *TeamConfig) *Team {
 	}
 }
 
-// AddTask adds a RequestTypeID and the corresponding RequestHandler for the request.
+// AddTask adds a defined RequestHandleFunc for a RequestTypeID.
 func (t *Team) AddTask(id RequestTypeID, requestFunc RequestHandleFunc) {
 	t.requestMap[id] = requestFunc
 }
 
+// AddConsist is the same as AddTask with the exception that the RequestTypeID should be serviced by a consistent worker.
+func (t *Team) AddConsist(id RequestTypeID, requestFunc RequestHandleFunc) {
+	t.requestMap[id] = requestFunc
+	t.consistencyMap[id] = requestFunc
+}
+
 // Submit sends a Request to the Team with a timeout specified in seconds.
 // If the request is sent, return true. Otherwise, if the timeout is hit, return false.
+// If CloseOnTimeout is true, the Result channel will be closed if open.
 func (t *Team) Submit(request TaskRequest) bool {
+	t.sync.mainSync.Add(1)
 	timeout := time.After(time.Duration(t.Config.MaxTimeSecs) * time.Second)
 	select {
 	case t.RequestChannel <- request:
+		t.sync.mainSync.Done()
 		return true
 	case <-timeout:
+		fmt.Println("TIMED OUT!!!", request.RequestType())
+		if t.Config.CloseOnTimeout {
+			if request.ResultChan() != nil {
+				close(request.ResultChan())
+			}
+		}
+		t.sync.mainSync.Done()
 		return false
 	}
 }
@@ -81,7 +103,7 @@ func (t *Team) Submit(request TaskRequest) bool {
 // Start starts all workers and Listner.
 func (t *Team) Start() {
 	for i := 0; i < len(t.workers); i++ {
-		t.workers[i] = make(chan TaskRequest) //, queueDepth)
+		t.workers[i] = make(chan TaskRequest, t.Config.WorkerQueueSize)
 		t.sync.mainSync.Add(1)
 		t.sync.workerSync.Add(1)
 		go startWorker(i, t.workers[i], t.requestMap, &t.sync)

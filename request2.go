@@ -23,7 +23,7 @@ type Data interface{}
 type TaskRequest interface {
 	RequestType() RequestTypeID
 	ResultChan() chan Result
-	Get() interface{}
+	Get() Data
 }
 
 // Request implements TaskRequest.
@@ -40,6 +40,7 @@ type Request struct {
 
 	// Result channel can used for any Result or response expected from a RequestHandler if desired.
 	// If the Result channel is expected from the Request, the ResultChan should be created when making the Request.
+	// The Result channel should be closed when no longer needed.
 	Result chan Result
 }
 
@@ -100,12 +101,26 @@ func NoopHandler(request TaskRequest) {
 	}
 }
 
-// HandleRequestMap is a mapping of RequestConstants and RequestHandlers.
-type HandleRequestMap map[RequestTypeID]RequestHandleFunc
+// RequestMapping is a mapping of RequestConstants and RequestHandlers.
+type RequestMapping map[RequestTypeID]RequestHandleFunc
 
-// NewRequestMap returns an empty HandleRequestMap.
-func NewRequestMap() HandleRequestMap {
-	return make(map[RequestTypeID]RequestHandleFunc)
+// NewRequestMapping returns an empty HandleRequestMap.
+func NewRequestMapping() RequestMapping {
+	return make(map[RequestTypeID]RequestMapping)
+}
+
+// RequestMap contains both Consistent Mappings and All Mappings.
+type RequestMap struct {
+	Consistent RequestMapping
+	All        RequestMapping
+}
+
+// NewRequestMap returns a RequestMap with both Consistent and All Maps.
+func NewRequestMap() {
+	return RequestMap{
+		Consistent: NewRequestMapping(),
+		All:        NewRequestMapping(),
+	}
 }
 
 // SendRequest sends a Request to a channel with a timeout specified in seconds.
