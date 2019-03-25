@@ -106,7 +106,7 @@ type RequestMapping map[RequestTypeID]RequestHandleFunc
 
 // NewRequestMapping returns an empty HandleRequestMap.
 func NewRequestMapping() RequestMapping {
-	return make(map[RequestTypeID]RequestMapping)
+	return make(map[RequestTypeID]RequestHandleFunc)
 }
 
 // RequestMap contains both Consistent Mappings and All Mappings.
@@ -116,7 +116,7 @@ type RequestMap struct {
 }
 
 // NewRequestMap returns a RequestMap with both Consistent and All Maps.
-func NewRequestMap() {
+func NewRequestMap() RequestMap {
 	return RequestMap{
 		Consistent: NewRequestMapping(),
 		All:        NewRequestMapping(),

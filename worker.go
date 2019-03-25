@@ -1,9 +1,6 @@
 package work
 
-import (
-	"sync"
-)
-
+/*
 // WorkerID is the ID assigned to each worker.
 // Should be Unique for each Worker.
 // type WorkerID int
@@ -21,7 +18,6 @@ type Worker interface {
 	Setup() *WorkerSetup
 }
 
-/*
 // StartWorker takes a WorkerSetup starts the Work Process.
 func StartWorker(setup *WorkerSetup) {
 	defer setup.Sync.Done()

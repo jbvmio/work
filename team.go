@@ -25,8 +25,8 @@ type TeamConfig struct {
 // NewTeamConfig returns a new TeamConfig with defaults.
 func NewTeamConfig() *TeamConfig {
 	return &TeamConfig{
-		Workers:         3,
-		WorkerQueueSize: 5,
+		Workers:         10,
+		WorkerQueueSize: 20,
 		MaxTimeSecs:     1,
 		CloseOnTimeout:  true,
 	}
@@ -37,8 +37,7 @@ type Team struct {
 	Config         *TeamConfig
 	RequestChannel chan TaskRequest
 	workers        []chan TaskRequest
-	requestMap     HandleRequestMap
-	consistencyMap HandleRequestMap
+	requestMap     RequestMap
 	stopChan       chan struct{}
 	sync           syncGroup
 }
@@ -58,7 +57,6 @@ func NewTeam(config *TeamConfig) *Team {
 		RequestChannel: make(chan TaskRequest),
 		workers:        make([]chan TaskRequest, config.Workers),
 		requestMap:     NewRequestMap(),
-		consistencyMap: NewRequestMap(),
 		sync: syncGroup{
 			mainSync:   &sync.WaitGroup{},
 			workerSync: &sync.WaitGroup{},
@@ -69,13 +67,13 @@ func NewTeam(config *TeamConfig) *Team {
 
 // AddTask adds a defined RequestHandleFunc for a RequestTypeID.
 func (t *Team) AddTask(id RequestTypeID, requestFunc RequestHandleFunc) {
-	t.requestMap[id] = requestFunc
+	t.requestMap.All[id] = requestFunc
 }
 
 // AddConsist is the same as AddTask with the exception that the RequestTypeID should be serviced by a consistent worker.
 func (t *Team) AddConsist(id RequestTypeID, requestFunc RequestHandleFunc) {
-	t.requestMap[id] = requestFunc
-	t.consistencyMap[id] = requestFunc
+	t.requestMap.All[id] = requestFunc
+	t.requestMap.Consistent[id] = requestFunc
 }
 
 // Submit sends a Request to the Team with a timeout specified in seconds.
@@ -106,7 +104,7 @@ func (t *Team) Start() {
 		t.workers[i] = make(chan TaskRequest, t.Config.WorkerQueueSize)
 		t.sync.mainSync.Add(1)
 		t.sync.workerSync.Add(1)
-		go startWorker(i, t.workers[i], t.requestMap, &t.sync)
+		go startWorker(i, t.workers[i], t.requestMap.All, &t.sync)
 	}
 	// wait for all workers to start
 	t.sync.mainSync.Wait()
@@ -138,7 +136,7 @@ Loop:
 		select {
 		case request := <-t.RequestChannel:
 			//t.sync.mainSync.Add(1)
-			_, consistent := t.consistencyMap[request.RequestType()]
+			_, consistent := t.requestMap.Consistent[request.RequestType()] //t.consistencyMap[request.RequestType()]
 			switch {
 			case consistent:
 				// Hash to a consistent worker
@@ -155,7 +153,7 @@ Loop:
 }
 
 // StartWorker takes a WorkerSetup starts the Work Process.
-func startWorker(id int, requestChan chan TaskRequest, requestMap HandleRequestMap, sync *syncGroup) {
+func startWorker(id int, requestChan chan TaskRequest, requestMap RequestMapping, sync *syncGroup) {
 	sync.mainSync.Done()
 	defer sync.workerSync.Done()
 	fmt.Println("Started Worker", id)

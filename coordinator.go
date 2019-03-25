@@ -1,5 +1,6 @@
 package work
 
+/*
 import (
 	"sync"
 )
@@ -36,7 +37,7 @@ type Coordinator interface {
 	Setup() *Setup
 }
 
-/*
+
 // StartWork creates the specified number of Workers, assigns the given HandleRequestMap and starts the work process.
 func StartWork(coord Coordinator, requestMap HandleRequestMap) {
 	coord.Setup().Workers = make([]chan Request, coord.Setup().WorkerCount)

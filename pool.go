@@ -1,5 +1,6 @@
 package work
 
+/*
 // Pool is a collection of workers and a Coordinator.
 type Pool struct {
 	Coord      *Setup
@@ -16,7 +17,7 @@ func NewPool(setup *Setup) Pool {
 	}
 }
 
-/*
+
 // Setup returns the Pool Coordinator Setup.
 func (p *Pool) Setup() *Setup {
 	return p.Coord
