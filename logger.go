@@ -2,6 +2,7 @@ package work
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -17,6 +18,9 @@ type Field zapcore.Field
 // Logger interface for implementing logging.
 type Logger interface {
 	Debug(string, ...zapcore.Field)
+	Error(string, ...zapcore.Field)
+	Info(string, ...zapcore.Field)
+	Warn(string, ...zapcore.Field)
 }
 
 type fieldPair map[string]interface{}
@@ -39,13 +43,36 @@ func LogWith(key string, value interface{}) zapcore.Field {
 		return zap.String(key, value.(string))
 	case int:
 		return zap.Int(key, value.(int))
+	case bool:
+		return zap.Bool(key, value.(bool))
+	case error:
+		return zap.NamedError(key, value.(error))
+	}
+	any := zap.Any("test", value)
+	if any.Interface != nil {
+		return zap.String(key, fmt.Sprintf("%T:%+v", value, value))
 	}
 	return zap.Any(key, value)
 }
 
-// Debug prints a Debug message with entered fields.
+// Debug prints a Debug Level message with entered fields.
 func (l *DefaultLogger) Debug(message string, fields ...zapcore.Field) {
 	l.Logger.Println(getMSG("[DEBUG]", message, fields))
+}
+
+// Error prints a Error Level message with entered fields.
+func (l *DefaultLogger) Error(message string, fields ...zapcore.Field) {
+	l.Logger.Println(getMSG("[ERROR]", message, fields))
+}
+
+// Info prints an Info Level message with entered fields.
+func (l *DefaultLogger) Info(message string, fields ...zapcore.Field) {
+	l.Logger.Println(getMSG("[INFO]", message, fields))
+}
+
+// Warn prints a Warn Level message with entered fields.
+func (l *DefaultLogger) Warn(message string, fields ...zapcore.Field) {
+	l.Logger.Println(getMSG("[WARN]", message, fields))
 }
 
 func getMSG(msgType, message string, fields []zapcore.Field) string {
@@ -74,18 +101,6 @@ func getMSG(msgType, message string, fields []zapcore.Field) string {
 	return message
 }
 
-/*
-// Reset clears all internally added Fields.
-func reset(fieldMap fieldPair) {
-	fieldMap = newStringMap()
-}
-
-// Reset clears all internally added Fields.
-func (l *DefaultLogger) Reset() {
-	l.fields = newStringMap()
-}
-*/
-
 // Prefix returns the Prefix for the DefaultLogger.
 func (l *DefaultLogger) Prefix() string {
 	return l.Logger.Prefix()
@@ -94,6 +109,12 @@ func (l *DefaultLogger) Prefix() string {
 // SetPrefix sets the Prefix for the DefaultLogger.
 func (l *DefaultLogger) SetPrefix(prefix string) {
 	l.Logger.SetPrefix(prefix)
+}
+
+// SetOutput changes the output of the DefaultLogger.
+// Default output is os.Stdout.
+func (l *DefaultLogger) SetOutput(w io.Writer) {
+	l.Logger.SetOutput(w)
 }
 
 // NewDefaultLogger returns a default Logger that can be used for simple logging.

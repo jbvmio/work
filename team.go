@@ -38,8 +38,8 @@ func NewTeamConfig() *TeamConfig {
 type Team struct {
 	Name           string
 	Config         *TeamConfig
-	RequestChannel chan TaskRequest
 	Logger         Logger
+	RequestChannel chan TaskRequest
 	workers        []chan TaskRequest
 	requestMap     RequestMap
 	stopChan       chan struct{}
@@ -59,6 +59,7 @@ func NewTeam(config *TeamConfig) *Team {
 	return &Team{
 		Name:           config.Name,
 		Config:         config,
+		Logger:         newNoopLogger(),
 		RequestChannel: make(chan TaskRequest),
 		workers:        make([]chan TaskRequest, config.Workers),
 		requestMap:     NewRequestMap(),
