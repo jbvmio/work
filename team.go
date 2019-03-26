@@ -2,7 +2,6 @@ package work
 
 import (
 	"math/rand"
-	"strconv"
 	"sync"
 	"time"
 
@@ -78,12 +77,12 @@ func (t *Team) SetName(name string) {
 }
 
 // AddTask adds a defined RequestHandleFunc for a RequestTypeID.
-func (t *Team) AddTask(id RequestTypeID, requestFunc RequestHandleFunc) {
+func (t *Team) AddTask(id int, requestFunc RequestHandleFunc) {
 	t.requestMap.All[id] = requestFunc
 }
 
 // AddConsist is the same as AddTask with the exception that the RequestTypeID should be serviced by a consistent worker.
-func (t *Team) AddConsist(id RequestTypeID, requestFunc RequestHandleFunc) {
+func (t *Team) AddConsist(id int, requestFunc RequestHandleFunc) {
 	t.requestMap.All[id] = requestFunc
 	t.requestMap.Consistent[id] = requestFunc
 }
@@ -96,11 +95,11 @@ func (t *Team) Submit(request TaskRequest) bool {
 	timeout := time.After(time.Duration(t.Config.MaxTimeSecs) * time.Second)
 	select {
 	case t.RequestChannel <- request:
-		t.Logger.Debug("Submit Request Successful", LogWith("Team", t.Name), LogWith("RequestType", request.RequestType()))
+		t.Logger.Debug("Submit Request Successful", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
 		t.sync.mainSync.Done()
 		return true
 	case <-timeout:
-		t.Logger.Debug("Submit Request TIMED OUT", LogWith("Team", t.Name), LogWith("RequestType", request.RequestType()))
+		t.Logger.Debug("Submit Request TIMED OUT", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
 		if t.Config.CloseOnTimeout {
 			if request.ResultChan() != nil {
 				close(request.ResultChan())
@@ -152,16 +151,16 @@ Loop:
 	for {
 		select {
 		case request := <-t.RequestChannel:
-			t.Logger.Debug("Request Received", LogWith("Team", t.Name), LogWith("RequestType", request.RequestType()))
-			_, consistent := t.requestMap.Consistent[request.RequestType()]
+			t.Logger.Debug("Request Received", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
+			_, consistent := t.requestMap.Consistent[request.ReqType().ID()]
 			switch {
 			case consistent:
 				// Hash to a consistent worker
-				t.Logger.Debug("Sending Request to Consistent Worker", LogWith("Team", t.Name), LogWith("RequestType", request.RequestType()))
-				t.workers[int(xxhash.ChecksumString64(`consist`+strconv.Itoa(int(request.RequestType())))%uint64(len(t.workers)))] <- request
+				t.Logger.Debug("Sending Request to Consistent Worker", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
+				t.workers[int(xxhash.ChecksumString64(t.Name+request.ReqType().String())%uint64(len(t.workers)))] <- request
 			default:
 				// Send to any worker
-				t.Logger.Debug("Sending Request to Worker", LogWith("Team", t.Name), LogWith("RequestType", request.RequestType()))
+				t.Logger.Debug("Sending Request to Worker", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
 				t.workers[int(rand.Int31n(int32(len(t.workers))))] <- request
 			}
 		case <-t.stopChan:
@@ -172,19 +171,19 @@ Loop:
 }
 
 // StartWorker takes a WorkerSetup starts the Work Process.
-func (t *Team) startWorker(id int, requestChan chan TaskRequest) { //, requestMap RequestMapping, sync *syncGroup) {
+func (t *Team) startWorker(id int, requestChan chan TaskRequest) {
 	t.sync.mainSync.Done()
 	defer t.sync.workerSync.Done()
 	t.Logger.Debug("Started Worker", LogWith("Team", t.Name), LogWith("WorkerID", id))
 	for request := range requestChan {
-		t.Logger.Debug("Received Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.RequestType()))
-		requestFunc, ok := t.requestMap.All[request.RequestType()]
+		t.Logger.Debug("Received Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
+		requestFunc, ok := t.requestMap.All[request.ReqType().ID()]
 		switch {
 		case ok:
-			t.Logger.Debug("Processing Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.RequestType()))
+			t.Logger.Debug("Processing Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
 			requestFunc(request)
 		default:
-			t.Logger.Debug("Cannot Process, No Matching Handler", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.RequestType()))
+			t.Logger.Debug("Cannot Process, No Matching Handler", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
 			// Add logging error here: Request Type or Handler not Found.
 			if request.ResultChan() != nil {
 				close(request.ResultChan())

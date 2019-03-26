@@ -2,7 +2,6 @@ package work
 
 import (
 	"math/rand"
-	"strconv"
 	"sync"
 
 	"github.com/OneOfOne/xxhash"
@@ -11,7 +10,7 @@ import (
 // Listener listens on the Request channel and routes requests.
 type Listener interface {
 	Sync() *sync.WaitGroup
-	RequestChannel() chan Request
+	RequestChannel() chan TaskRequest
 	StopChannel() chan struct{}
 }
 
@@ -26,14 +25,14 @@ Loop:
 	for {
 		select {
 		case request := <-l.RequestChannel():
-			_, consistent := requestMap.Consistent[request.RequestType()]
+			_, consistent := requestMap.Consistent[request.ReqType().ID()]
 			switch {
 			case consistent:
 				// Hash to a consistent worker
-				workers[int(xxhash.ChecksumString64(`consist`+strconv.Itoa(int(request.RequestType())))%uint64(len(workers)))] <- &request
+				workers[int(xxhash.ChecksumString64(`consist`+request.ReqType().String())%uint64(len(workers)))] <- request
 			default:
 				// Send to any worker
-				workers[int(rand.Int31n(int32(len(workers))))] <- &request
+				workers[int(rand.Int31n(int32(len(workers))))] <- request
 			}
 		case <-l.StopChannel():
 			break Loop
