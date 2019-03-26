@@ -27,12 +27,14 @@ type TaskRequest interface {
 	ReqType() RequestType
 	ResultChan() chan interface{}
 	Get() interface{}
+	ConsistID() string
 }
 
 // RequestID implements RequestType.
 type RequestID struct {
-	id   int
-	name string
+	id           int
+	name         string
+	consistGroup string
 }
 
 // ID returns the Request ID.
@@ -83,6 +85,12 @@ func (r *Request) ResultChan() chan interface{} {
 // Get returns any Data in the Request.
 func (r *Request) Get() interface{} {
 	return r.Data
+}
+
+// ConsistID is any field or identifier in the request that should be used for consistent requests.
+// The Request must be added as Consistent first before this will be evaluated.
+func (r *Request) ConsistID() string {
+	return ""
 }
 
 // GetResult returns the Result of the Request and closes the Result channel.

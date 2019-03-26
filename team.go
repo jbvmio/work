@@ -151,16 +151,16 @@ Loop:
 	for {
 		select {
 		case request := <-t.RequestChannel:
-			t.Logger.Debug("Request Received", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
+			t.Logger.Debug("Request Received", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
 			_, consistent := t.requestMap.Consistent[request.ReqType().ID()]
 			switch {
 			case consistent:
 				// Hash to a consistent worker
-				t.Logger.Debug("Sending Request to Consistent Worker", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
-				t.workers[int(xxhash.ChecksumString64(t.Name+request.ReqType().String())%uint64(len(t.workers)))] <- request
+				t.Logger.Debug("Forwarding Consist Request", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
+				t.workers[int(xxhash.ChecksumString64(request.ConsistID())%uint64(len(t.workers)))] <- request
 			default:
 				// Send to any worker
-				t.Logger.Debug("Sending Request to Worker", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
+				t.Logger.Debug("Forwarding Request", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
 				t.workers[int(rand.Int31n(int32(len(t.workers))))] <- request
 			}
 		case <-t.stopChan:
