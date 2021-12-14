@@ -1,11 +1,13 @@
 package work
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/OneOfOne/xxhash"
+	"go.uber.org/zap"
 )
 
 // TeamConfig contains configuration values for a work Team.
@@ -37,7 +39,7 @@ func NewTeamConfig() *TeamConfig {
 type Team struct {
 	Name           string
 	Config         *TeamConfig
-	Logger         Logger
+	Logger         *zap.Logger
 	RequestChannel chan TaskRequest
 	workers        []chan TaskRequest
 	requestMap     RequestMap
@@ -50,7 +52,7 @@ type syncGroup struct {
 	workerSync *sync.WaitGroup
 }
 
-// NewTeam creates a new team with the number of workers specified.
+// NewTeam creates a new team with the given config options.
 func NewTeam(config *TeamConfig) *Team {
 	if config == nil {
 		config = NewTeamConfig()
@@ -58,7 +60,7 @@ func NewTeam(config *TeamConfig) *Team {
 	return &Team{
 		Name:           config.Name,
 		Config:         config,
-		Logger:         newNoopLogger(),
+		Logger:         newNopLogger(),
 		RequestChannel: make(chan TaskRequest),
 		workers:        make([]chan TaskRequest, config.Workers),
 		requestMap:     NewRequestMap(),
@@ -95,11 +97,11 @@ func (t *Team) Submit(request TaskRequest) bool {
 	timeout := time.After(time.Duration(t.Config.MaxTimeSecs) * time.Second)
 	select {
 	case t.RequestChannel <- request:
-		t.Logger.Debug("Submit Request Successful", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
+		t.Logger.Debug("Submit Request Successful", zap.String("Team", t.Name), zap.String("RequestType", fmt.Sprintf("%T:%+v", request.ReqType(), request.ReqType())))
 		t.sync.mainSync.Done()
 		return true
 	case <-timeout:
-		t.Logger.Debug("Submit Request TIMED OUT", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType()))
+		t.Logger.Debug("Submit Request TIMED OUT", zap.String("Team", t.Name), zap.String("RequestType", fmt.Sprintf("%T:%+v", request.ReqType(), request.ReqType())))
 		if t.Config.CloseOnTimeout {
 			if request.ResultChan() != nil {
 				close(request.ResultChan())
@@ -112,12 +114,12 @@ func (t *Team) Submit(request TaskRequest) bool {
 
 // Start starts all workers and Listner.
 func (t *Team) Start() {
-	t.configureLogger()
+	ensureLogger(t)
 	for i := 0; i < len(t.workers); i++ {
 		t.workers[i] = make(chan TaskRequest, t.Config.WorkerQueueSize)
 		t.sync.mainSync.Add(1)
 		t.sync.workerSync.Add(1)
-		t.Logger.Debug("Starting Worker", LogWith("Team", t.Name), LogWith("WorkerID", i))
+		t.Logger.Debug("Starting Worker", zap.String("Team", t.Name), zap.Int("WorkerID", i))
 		go t.startWorker(i, t.workers[i]) //, t.requestMap.All, &t.sync)
 	}
 	// wait for all workers to start
@@ -129,20 +131,20 @@ func (t *Team) Start() {
 
 // Stop here.
 func (t *Team) Stop() {
-	t.Logger.Debug("Stop Received.", LogWith("Team", t.Name))
-	t.Logger.Debug("Stopping", LogWith("Team", t.Name))
+	t.Logger.Debug("Stop Received.", zap.String("Team", t.Name))
+	t.Logger.Debug("Stopping", zap.String("Team", t.Name))
 	close(t.stopChan)
 	t.sync.mainSync.Wait()
 	close(t.RequestChannel)
 	for i := 0; i < len(t.workers); i++ {
 		t.Logger.Debug("Stopping Worker",
-			LogWith("Team", t.Name),
-			LogWith("Worker", i),
+			zap.String("Team", t.Name),
+			zap.Int("Worker", i),
 		)
 		close(t.workers[i])
 	}
 	t.sync.workerSync.Wait()
-	t.Logger.Debug("Stop Workers Complete", LogWith("Team", t.Name))
+	t.Logger.Debug("Stop Workers Complete", zap.String("Team", t.Name))
 }
 
 func (t *Team) listen() {
@@ -151,20 +153,20 @@ Loop:
 	for {
 		select {
 		case request := <-t.RequestChannel:
-			t.Logger.Debug("Request Received", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
+			t.Logger.Debug("Request Received", zap.String("Team", t.Name), zap.String("RequestType", request.ReqType().String()))
 			_, consistent := t.requestMap.Consistent[request.ReqType().ID()]
 			switch {
 			case consistent:
 				// Hash to a consistent worker
-				t.Logger.Debug("Forwarding Consist Request", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
+				t.Logger.Debug("Forwarding Consist Request", zap.String("Team", t.Name), zap.String("RequestType", request.ReqType().String()))
 				t.workers[int(xxhash.ChecksumString64(request.ConsistID())%uint64(len(t.workers)))] <- request
 			default:
 				// Send to any worker
-				t.Logger.Debug("Forwarding Request", LogWith("Team", t.Name), LogWith("RequestType", request.ReqType().String()))
+				t.Logger.Debug("Forwarding Request", zap.String("Team", t.Name), zap.String("RequestType", request.ReqType().String()))
 				t.workers[int(rand.Int31n(int32(len(t.workers))))] <- request
 			}
 		case <-t.stopChan:
-			t.Logger.Debug("Stopping Listener", LogWith("Team", t.Name))
+			t.Logger.Debug("Stopping Listener", zap.String("Team", t.Name))
 			break Loop
 		}
 	}
@@ -174,45 +176,21 @@ Loop:
 func (t *Team) startWorker(id int, requestChan chan TaskRequest) {
 	t.sync.mainSync.Done()
 	defer t.sync.workerSync.Done()
-	t.Logger.Debug("Started Worker", LogWith("Team", t.Name), LogWith("WorkerID", id))
+	t.Logger.Debug("Started Worker", zap.String("Team", t.Name), zap.Int("WorkerID", id))
 	for request := range requestChan {
-		t.Logger.Debug("Received Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
+		t.Logger.Debug("Received Request", zap.String("Team", t.Name), zap.Int("WorkerID", id), zap.String("RequestType", request.ReqType().String()))
 		requestFunc, ok := t.requestMap.All[request.ReqType().ID()]
 		switch {
 		case ok:
-			t.Logger.Debug("Processing Request", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
+			t.Logger.Debug("Processing Request", zap.String("Team", t.Name), zap.Int("WorkerID", id), zap.String("RequestType", request.ReqType().String()))
 			requestFunc(request)
 		default:
-			t.Logger.Debug("Cannot Process, No Matching Handler", LogWith("Team", t.Name), LogWith("WorkerID", id), LogWith("RequestType", request.ReqType().String()))
+			t.Logger.Debug("Cannot Process, No Matching Handler", zap.String("Team", t.Name), zap.Int("WorkerID", id), zap.String("RequestType", request.ReqType().String()))
 			// Add logging error here: Request Type or Handler not Found.
 			if request.ResultChan() != nil {
 				close(request.ResultChan())
 			}
 		}
 	}
-	t.Logger.Debug("Worker Stopped", LogWith("Team", t.Name), LogWith("WorkerID", id))
-}
-
-// Start starts all workers and Listner.
-func (t *Team) configureLogger() {
-	if t.Logger == nil {
-		var noopLogger Logger = newNoopLogger()
-		t.Logger = noopLogger
-	}
-	switch t.Logger.(type) {
-	case *DefaultLogger:
-		logger := t.Logger.(*DefaultLogger)
-		if logger.Prefix() == "" {
-			switch {
-			case t.Name != "Default":
-				logger.SetPrefix("[" + t.Name + "] ")
-			case t.Config.Name != "Default":
-				logger.SetPrefix(string("[Config " + t.Config.Name + "] "))
-			case t.Name == "Default" || t.Config.Name == "Default":
-				logger.SetPrefix(string("[Default] "))
-			default:
-				logger.SetPrefix(string("[UnKnownTeam] "))
-			}
-		}
-	}
+	t.Logger.Debug("Worker Stopped", zap.String("Team", t.Name), zap.Int("WorkerID", id))
 }
